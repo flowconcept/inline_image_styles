@@ -1,0 +1,9 @@
+name: Inline Image Styles
+description: Allows you to apply image styles to inline images.
+package: Custom
+type: module
+version: 1.0
+core: 8.x
+dependencies:
+  - image
+  - filter
