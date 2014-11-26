@@ -1,0 +1,12 @@
+# Schema for the configuration files of the Inline Image Styles module.
+
+filter_settings.filter_inline_image_styles:
+  type: filter
+  label: 'Inline Image Styles filter'
+  mapping:
+    inline_image_style:
+      type: string
+      label: 'Inline image style'
+    inline_image_link:
+      type: string
+      label: 'Link image to'

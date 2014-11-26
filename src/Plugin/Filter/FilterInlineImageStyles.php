@@ -11,6 +11,7 @@ use Drupal\filter\FilterProcessResult;
 use Drupal\filter\Plugin\FilterBase;
 use Drupal\Component\Utility\Unicode;
 use Drupal\Component\Utility\Html;
+use Drupal\Core\Form\FormStateInterface;
 
 /**
  * Provides a filter to restrict images to site.
@@ -20,16 +21,62 @@ use Drupal\Component\Utility\Html;
  *   title = @Translation("Inline Image Styles"),
  *   description = @Translation("Allows you to apply image styles on inline images."),
  *   type = Drupal\filter\Plugin\FilterInterface::TYPE_TRANSFORM_IRREVERSIBLE,
- *   weight = 10
+ *   settings = {
+ *     "inline_image_style" = "",
+ *     "inline_image_link" = "",
+ *   },
+ *   weight = 100
  * )
  */
 class FilterInlineImageStyles extends FilterBase {
+
+  const INLINE_IMAGE_STYLE_ORIGINAL = '';
+
+  const LINK_TO_NOTHING        = '';
+  const LINK_TO_ORIGINAL_IMAGE = '@';
+
+  /**
+   * {@inheritdoc}
+   */
+  public function settingsForm(array $form, FormStateInterface $form_state) {
+
+    $styles = image_style_options(FALSE);
+    $image_styles = array_merge(
+      array(static::INLINE_IMAGE_STYLE_ORIGINAL => t('Show the original image')),
+      $styles
+    );
+    $link_types = array_merge(
+      array(
+        static::LINK_TO_NOTHING        => t('Nothing'),
+        static::LINK_TO_ORIGINAL_IMAGE => t('The original image'),
+      ),
+      $styles
+    );
+
+    $form['inline_image_style'] = array(
+      '#type' => 'select',
+      '#title' => $this->t('Inline image style'),
+      '#default_value' => $this->settings['inline_image_style'],
+      '#options' => $image_styles,
+      // '#description' => $this->t('A list of HTML tags that can be used. JavaScript event attributes, JavaScript URLs, and CSS are always stripped.'),
+    );
+    $form['inline_image_link'] = array(
+      '#type' => 'select',
+      '#title' => $this->t('Link image to'),
+      '#default_value' => $this->settings['inline_image_link'],
+      '#options' => $link_types,
+    );
+
+    return $form;
+  }
 
   /**
    * {@inheritdoc}
    */
   public function process($text, $langcode) {
+
     $dom = Html::load($text);
+
     foreach ($dom->getElementsByTagName('img') as $image) {
       $uuid = $image->getAttribute('data-editor-file-uuid');
       if ($uuid) {
@@ -48,30 +95,32 @@ class FilterInlineImageStyles extends FilterBase {
     return t('TIPSSSS.');
   }
 
-  protected function renderStyledImage($uuid, $attributes, $link_file = true) {
+  protected function renderStyledImage($uuid, $attributes) {
+
+    $inline_image_style = $this->settings['inline_image_style'];
+    $inline_image_link = $this->settings['inline_image_link'];
 
     $file = $uuid ? entity_load_by_uuid('file', $uuid) : NULL;
-
+    $image_uri = $file->getFileUri();
     $item = (object) array(
       'target_id' => $uuid,
       'alt' => 'ALT',
-      'uri' => $file->getFileUri(),
+      'uri' => $image_uri,
     );
 
-    if ($link_file) {
-      $image_uri = $file->getFileUri();
+    if (static::LINK_TO_NOTHING !== $inline_image_link) {
+      $image_style = (static::LINK_TO_ORIGINAL_IMAGE !== $inline_image_link)
+        ? entity_load('image_style', $inline_image_link)
+        : NULL;
       $uri = array(
-        'path' => file_create_url($image_uri),
+        'path' => isset($image_style) ? $image_style->buildUrl($image_uri) : file_create_url($image_uri),
         'options' => array(),
       );
     }
 
-    $image_style_setting = 'thumbnail';
-
-    // Collect cache tags to be added for each item in the field.
     $cache_tags = array();
-    if (!empty($image_style_setting)) {
-      $image_style = entity_load('image_style', $image_style_setting);
+    if (static::INLINE_IMAGE_STYLE_ORIGINAL !== $inline_image_style) {
+      $image_style = entity_load('image_style', $inline_image_style);
       $cache_tags = $image_style->getCacheTags();
     }
 
@@ -79,7 +128,7 @@ class FilterInlineImageStyles extends FilterBase {
       '#theme' => 'image_formatter',
       '#item' => $item,
       '#item_attributes' => $attributes,
-      '#image_style' => $image_style_setting,
+      '#image_style' => $inline_image_style,
       '#path' => isset($uri) ? $uri : '',
       '#cache' => array(
         'tags' => $cache_tags,
@@ -90,15 +139,20 @@ class FilterInlineImageStyles extends FilterBase {
   }
 
   protected function readElementAttributes($element) {
+
     $attributes = array();
     $length = $element->attributes->length;
+
     for ($i = 0; $i < $length; ++$i) {
       $attributes[$element->attributes->item($i)->name] = $element->attributes->item($i)->value;
     }
+    unset($attributes['src']);
+
     return $attributes;
   }
 
   protected function createInlineImageNode($uuid, $attributes, $dom) {
+
     $class = isset($attributes['class']) ? $attributes['class'] : '';
     $align_class = '';
     $class = preg_replace_callback(
@@ -109,7 +163,8 @@ class FilterInlineImageStyles extends FilterBase {
       },
       $class
     );
-    $attributes['class'] = ($class ? ($class . ' ') : '') . ' inline-image';
+
+    $attributes['class'] = trim(($class ? ($class . ' ') : '') . ' inline-image');
 
     $html = $this->renderStyledImage($uuid, $attributes);
 
@@ -121,11 +176,11 @@ class FilterInlineImageStyles extends FilterBase {
     };
 
     $node = $dom->importNode($node, TRUE);
-    $p = $dom->createElement('div');
-    $p->appendChild($node);
-    $p->setAttribute('class', trim($p->getAttribute('class') . ' field-type-image ' . $align_class));
+    $div = $dom->createElement('div');
+    $div->appendChild($node);
+    $div->setAttribute('class', trim($div->getAttribute('class') . ' field-type-image inline-image' . $align_class));
 
-    return $p;
+    return $div;
   }
 
 }
