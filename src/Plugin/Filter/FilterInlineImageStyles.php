@@ -104,7 +104,7 @@ class FilterInlineImageStyles extends FilterBase {
     $class = preg_replace_callback(
       '/ *align-(center|left|right) */i',
       function ($matches) use (&$align_class) {
-        $align_class = $matches[0];
+        $align_class = str_replace('align-center', 'text-align-center', $matches[0]);
         return ' ';
       },
       $class
@@ -121,9 +121,9 @@ class FilterInlineImageStyles extends FilterBase {
     };
 
     $node = $dom->importNode($node, TRUE);
-    $p = $dom->createElement('p');
+    $p = $dom->createElement('div');
     $p->appendChild($node);
-    $p->setAttribute('class', trim($p->getAttribute('class') . ' field-type-image text-' . $align_class));
+    $p->setAttribute('class', trim($p->getAttribute('class') . ' field-type-image ' . $align_class));
 
     return $p;
   }
