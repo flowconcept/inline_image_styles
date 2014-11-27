@@ -169,7 +169,8 @@ class FilterInlineImageStyles extends FilterBase {
     $html = $this->renderStyledImage($uuid, $attributes);
 
     // Load the altered HTML into a new DOMDocument and retrieve the element.
-    foreach(Html::load($html)->getElementsByTagName('body')->item(0)->childNodes as $node) {
+    $nodes = Html::load($html)->getElementsByTagName('body')->item(0)->childNodes;
+    foreach($nodes as $node) {
       if ($node->nodeName !== '#text') {
         break;
       }
@@ -178,7 +179,7 @@ class FilterInlineImageStyles extends FilterBase {
     $node = $dom->importNode($node, TRUE);
     $div = $dom->createElement('div');
     $div->appendChild($node);
-    $div->setAttribute('class', trim($div->getAttribute('class') . ' field-type-image inline-image' . $align_class));
+    $div->setAttribute('class', trim($div->getAttribute('class') . ' field-type-image inline-image ' . $align_class));
 
     return $div;
   }
