@@ -7,11 +7,14 @@
 
 namespace Drupal\inline_image_styles\Plugin\Filter;
 
+use Drupal;
 use Drupal\filter\FilterProcessResult;
 use Drupal\filter\Plugin\FilterBase;
-use Drupal\Component\Utility\Unicode;
-use Drupal\Component\Utility\Html;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Component\Utility\Html;
+use DOMDocument;
+use DOMNode;
+use DOMElement;
 
 /**
  * Provides a filter to restrict images to site.
@@ -40,31 +43,17 @@ class FilterInlineImageStyles extends FilterBase {
    */
   public function settingsForm(array $form, FormStateInterface $form_state) {
 
-    $styles = image_style_options(FALSE);
-    $image_styles = array_merge(
-      array(static::INLINE_IMAGE_STYLE_ORIGINAL => t('Show the original image')),
-      $styles
-    );
-    $link_types = array_merge(
-      array(
-        static::LINK_TO_NOTHING        => t('Nothing'),
-        static::LINK_TO_ORIGINAL_IMAGE => t('The original image'),
-      ),
-      $styles
-    );
-
     $form['inline_image_style'] = array(
       '#type' => 'select',
       '#title' => $this->t('Inline image style'),
       '#default_value' => $this->settings['inline_image_style'],
-      '#options' => $image_styles,
-      // '#description' => $this->t('A list of HTML tags that can be used. JavaScript event attributes, JavaScript URLs, and CSS are always stripped.'),
+      '#options' => $this->getInlineImageStyleOptions(),
     );
     $form['inline_image_link'] = array(
       '#type' => 'select',
       '#title' => $this->t('Link image to'),
       '#default_value' => $this->settings['inline_image_link'],
-      '#options' => $link_types,
+      '#options' => $this->getLinkImageToOptions(),
     );
 
     return $form;
@@ -80,7 +69,11 @@ class FilterInlineImageStyles extends FilterBase {
     foreach ($dom->getElementsByTagName('img') as $image) {
       $uuid = $image->getAttribute('data-editor-file-uuid');
       if ($uuid) {
-        $node = $this->createInlineImageNode($uuid, $this->readElementAttributes($image), $dom);
+        $node = $this->createInlineImageNode(
+          $uuid,
+          $this->getElementAttributes($image, array('src')),
+          $dom
+        );
         $image->parentNode->replaceChild($node, $image);
       }
     }
@@ -90,40 +83,164 @@ class FilterInlineImageStyles extends FilterBase {
 
   /**
    * {@inheritdoc}
+   *
+   * This filter has no tips.
    */
   public function tips($long = FALSE) {
-    return t('TIPSSSS.');
+    return NULL;
   }
 
-  protected function renderStyledImage($uuid, $attributes) {
+  /**
+   * Returns options available for the "Inline image style" filter setting.
+   *
+   * @return array
+   */
+  protected function getInlineImageStyleOptions() {
+    return array_merge(
+      array(
+        static::INLINE_IMAGE_STYLE_ORIGINAL => t('Show the original image')
+      ),
+      image_style_options(FALSE)
+    );
+  }
+
+  /**
+   * Returns options available for the "Link image to" filter setting.
+   *
+   * @return array
+   */
+  protected function getLinkImageToOptions() {
+    return array_merge(
+      array(
+        static::LINK_TO_NOTHING        => t('Nothing'),
+        static::LINK_TO_ORIGINAL_IMAGE => t('The original image'),
+      ),
+      image_style_options(FALSE)
+    );
+  }
+
+  /**
+   * Returns attributes for an HTML element.
+   *
+   * @param DOMNode $element Element that we need attributes for.
+   * @param array   $exclude List of attributes which should be excluded from the result.
+   *
+   * @return array
+   */
+  protected function getElementAttributes(DOMNode $element, array $exclude = array()) {
+
+    $attributes = array();
+    $length = $element->attributes->length;
+
+    for ($i = 0; $i < $length; ++$i) {
+      $item = $element->attributes->item($i);
+      if (!in_array($item->name, $exclude))
+      $attributes[$item->name] = $item->value;
+    }
+
+    return $attributes;
+  }
+
+  /**
+   * Creates an HTML element for the inline-image file having the specified uuid.
+   *
+   * @param string      $uuid       UUID of the inline-image file.
+   * @param array       $attributes Element's HTML attributes.
+   * @param DOMDocument $dom        Document that we a creating the element for.
+   *
+   * @return DOMElement
+   */
+  protected function createInlineImageNode($uuid, $attributes, $dom) {
+
+    // Remove the "align" CSS class from element's attributes
+    $align_class = '';
+    $class = preg_replace_callback(
+      '/ *align-(center|left|right) */i',
+      function ($matches) use (&$align_class) {
+        $align_class = str_replace('align-center', 'text-align-center', $matches[0]);
+        return ' ';
+      },
+      isset($attributes['class']) ? $attributes['class'] : ''
+    );
+
+    // Add an extra class to the image tag to identify it among other images on the page
+    $attributes['class'] = trim(($class ? ($class . ' ') : '') . ' inline-image');
+
+    // Render the inline image and get a DOMElement for it
+    $nodes = Html::load($this->renderInlineImage($uuid, $attributes))
+      ->getElementsByTagName('body')
+      ->item(0)
+      ->childNodes;
+    foreach($nodes as $node) {
+      // Ignore empty text nodes around the element (if any)
+      if ($node->nodeName !== '#text') {
+        break;
+      }
+    };
+
+    // Import the element into the DOM that we are working in and get it wrapped into a DIV node
+    $div = $dom->createElement('div');
+    if (isset($node)) {
+      $node = $dom->importNode($node, TRUE);
+      $div->appendChild($node);
+    }
+
+    // Set the "align" CSS class on the wrapping node to get it styled properly
+    $div->setAttribute('class', trim($div->getAttribute('class') . ' field-type-image inline-image ' . $align_class));
+
+    return $div;
+  }
+
+  /**
+   * Renders HTML for the inline-image file having the specified UUID.
+   *
+   * @param string $uuid       UUID of the inline-image file.
+   * @param array  $attributes Attributes for the inline-image HTML tag.
+   *
+   * @return string
+   *
+   * @throws \Exception
+   */
+  protected function renderInlineImage($uuid, array $attributes) {
 
     $inline_image_style = $this->settings['inline_image_style'];
     $inline_image_link = $this->settings['inline_image_link'];
 
-    $file = $uuid ? entity_load_by_uuid('file', $uuid) : NULL;
-    $image_uri = $file->getFileUri();
+    // Get information on the inline-image file being rendered
+    $file = Drupal::entityManager()->loadEntityByUuid('file', $uuid);
     $item = (object) array(
+      'entity'    => $file,
       'target_id' => $uuid,
-      'alt' => 'ALT',
-      'uri' => $image_uri,
+      // The following attributes are imported from the $attributes parameter
+      'alt'       => NULL,
+      'width'     => NULL,
+      'height'    => NULL,
+      'title'     => NULL,
     );
 
+    // Get information on the linked image
     if (static::LINK_TO_NOTHING !== $inline_image_link) {
-      $image_style = (static::LINK_TO_ORIGINAL_IMAGE !== $inline_image_link)
-        ? entity_load('image_style', $inline_image_link)
-        : NULL;
+      $image_uri = $file->getFileUri();
+      if (static::LINK_TO_ORIGINAL_IMAGE !== $inline_image_link) {
+        $image_style = entity_load('image_style', $inline_image_link);
+        $path = $image_style ? $image_style->buildUrl($image_uri) : '';
+      } else {
+        $path = file_create_url($image_uri);
+      }
       $uri = array(
-        'path' => isset($image_style) ? $image_style->buildUrl($image_uri) : file_create_url($image_uri),
+        'path' => $path,
         'options' => array(),
       );
     }
 
+    // Get information on the image style that should be applied on the inline image
     $cache_tags = array();
     if (static::INLINE_IMAGE_STYLE_ORIGINAL !== $inline_image_style) {
       $image_style = entity_load('image_style', $inline_image_style);
       $cache_tags = $image_style->getCacheTags();
     }
 
+    // Render the element
     $element = array(
       '#theme' => 'image_formatter',
       '#item' => $item,
@@ -136,52 +253,6 @@ class FilterInlineImageStyles extends FilterBase {
     );
 
     return drupal_render($element);
-  }
-
-  protected function readElementAttributes($element) {
-
-    $attributes = array();
-    $length = $element->attributes->length;
-
-    for ($i = 0; $i < $length; ++$i) {
-      $attributes[$element->attributes->item($i)->name] = $element->attributes->item($i)->value;
-    }
-    unset($attributes['src']);
-
-    return $attributes;
-  }
-
-  protected function createInlineImageNode($uuid, $attributes, $dom) {
-
-    $class = isset($attributes['class']) ? $attributes['class'] : '';
-    $align_class = '';
-    $class = preg_replace_callback(
-      '/ *align-(center|left|right) */i',
-      function ($matches) use (&$align_class) {
-        $align_class = str_replace('align-center', 'text-align-center', $matches[0]);
-        return ' ';
-      },
-      $class
-    );
-
-    $attributes['class'] = trim(($class ? ($class . ' ') : '') . ' inline-image');
-
-    $html = $this->renderStyledImage($uuid, $attributes);
-
-    // Load the altered HTML into a new DOMDocument and retrieve the element.
-    $nodes = Html::load($html)->getElementsByTagName('body')->item(0)->childNodes;
-    foreach($nodes as $node) {
-      if ($node->nodeName !== '#text') {
-        break;
-      }
-    };
-
-    $node = $dom->importNode($node, TRUE);
-    $div = $dom->createElement('div');
-    $div->appendChild($node);
-    $div->setAttribute('class', trim($div->getAttribute('class') . ' field-type-image inline-image ' . $align_class));
-
-    return $div;
   }
 
 }
