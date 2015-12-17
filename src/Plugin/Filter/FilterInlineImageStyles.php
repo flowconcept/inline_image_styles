@@ -67,13 +67,18 @@ class FilterInlineImageStyles extends FilterBase {
     $dom = Html::load($text);
 
     foreach ($dom->getElementsByTagName('img') as $image) {
-      $uuid = $image->getAttribute('data-editor-file-uuid');
+      $uuid = $image->getAttribute('data-entity-uuid');
       if ($uuid) {
-        $node = $this->createInlineImageNode(
-          $uuid,
-          $this->getElementAttributes($image, array('src')),
-          $dom
-        );
+        try {
+          $node = $this->createInlineImageNode(
+            $uuid,
+            $this->getElementAttributes($image, array('src')),
+            $dom
+          );
+        } catch (\Exception $exception) {
+          watchdog_exception('warning', $exception);
+          return new FilterProcessResult(Html::serialize($dom));
+        }
         $image->parentNode->replaceChild($node, $image);
       }
     }
@@ -208,6 +213,10 @@ class FilterInlineImageStyles extends FilterBase {
 
     // Get information on the inline-image file being rendered
     $file = Drupal::entityManager()->loadEntityByUuid('file', $uuid);
+    if (!$file) {
+      throw new \Exception(sprintf('Could not load file by uuid (%s).', $uuid));
+    }
+
     $item = (object) array(
       'entity'    => $file,
       'target_id' => $uuid,
