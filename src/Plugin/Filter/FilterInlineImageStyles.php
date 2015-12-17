@@ -173,7 +173,7 @@ class FilterInlineImageStyles extends FilterBase {
       ->childNodes;
     foreach($nodes as $node) {
       // Ignore empty text nodes around the element (if any)
-      if ($node->nodeName !== '#text') {
+      if ($node->nodeName !== '#text' && $node->nodeName !== '#comment') {
         break;
       }
     };
