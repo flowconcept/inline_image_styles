@@ -227,10 +227,7 @@ class FilterInlineImageStyles extends FilterBase {
       } else {
         $path = file_create_url($image_uri);
       }
-      $uri = array(
-        'path' => $path,
-        'options' => array(),
-      );
+      $uri = Url::fromUri($path);
     }
 
     // Get information on the image style that should be applied on the inline image
@@ -246,12 +243,11 @@ class FilterInlineImageStyles extends FilterBase {
       '#item' => $item,
       '#item_attributes' => $attributes,
       '#image_style' => $inline_image_style,
-      '#path' => isset($uri) ? $uri : '',
+      '#url' => isset($uri) ? $uri : '',
       '#cache' => array(
         'tags' => $cache_tags,
       ),
     );
-
     return drupal_render($element);
   }
 
