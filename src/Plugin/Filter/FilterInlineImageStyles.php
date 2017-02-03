@@ -169,7 +169,7 @@ class FilterInlineImageStyles extends FilterBase {
     );
 
     // Add an extra class to the image tag to identify it among other images on the page
-    $attributes['class'] = trim(($class ? ($class . ' ') : '') . ' inline-image');
+    $attributes['class'][] = trim(($class ? ($class . ' ') : '') . ' inline-image');
 
     // Render the inline image and get a DOMElement for it
     $nodes = Html::load($this->renderInlineImage($uuid, $attributes))
