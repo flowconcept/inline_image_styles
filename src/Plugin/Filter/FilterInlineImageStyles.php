@@ -65,12 +65,13 @@ class FilterInlineImageStyles extends FilterBase {
   public function process($text, $langcode) {
 
     $dom = Html::load($text);
-
-    foreach ($dom->getElementsByTagName('img') as $image) {
+    $xpath = new \DOMXPath($dom);
+    $images = $xpath->query('//img[@data-entity-type="file" and @data-entity-uuid]');
+    foreach ($images as $image) {
       $uuid = $image->getAttribute('data-entity-uuid');
       if ($uuid) {
         try {
-          $node = $this->createInlineImageNode(
+          $updated = $this->createInlineImageNode(
             $uuid,
             $this->getElementAttributes($image, array('src')),
             $dom
@@ -79,7 +80,7 @@ class FilterInlineImageStyles extends FilterBase {
           watchdog_exception('warning', $exception);
           return new FilterProcessResult(Html::serialize($dom));
         }
-        $image->parentNode->replaceChild($node, $image);
+        $image->parentNode->replaceChild($updated, $image);
       }
     }
 
@@ -134,13 +135,20 @@ class FilterInlineImageStyles extends FilterBase {
    */
   protected function getElementAttributes(DOMNode $element, array $exclude = array()) {
 
-    $attributes = array();
+    $attributes = [];
     $length = $element->attributes->length;
 
     for ($i = 0; $i < $length; ++$i) {
       $item = $element->attributes->item($i);
-      if (!in_array($item->name, $exclude))
-      $attributes[$item->name] = $item->value;
+
+      if (!in_array($item->name, $exclude)) {
+        if ($item->name == 'class') {
+          $attributes['class'] = explode(' ', $item->value);
+        }
+        else {
+          $attributes[$item->name] = $item->value;
+        }
+      }
     }
 
     return $attributes;
@@ -157,42 +165,29 @@ class FilterInlineImageStyles extends FilterBase {
    */
   protected function createInlineImageNode($uuid, $attributes, $dom) {
 
-    // Remove the "align" CSS class from element's attributes
-    $align_class = '';
-    $class = preg_replace_callback(
-      '/ *align-(center|left|right) */i',
-      function ($matches) use (&$align_class) {
-        $align_class = str_replace('align-center', 'text-align-center', $matches[0]);
-        return ' ';
-      },
-      isset($attributes['class']) ? $attributes['class'] : ''
-    );
-
     // Add an extra class to the image tag to identify it among other images on the page
-    $attributes['class'][] = trim(($class ? ($class . ' ') : '') . ' inline-image');
+    if (!isset($attributes['class']) || !in_array('inline-image',  $attributes['class'])) {
+      $attributes['class'][] = 'inline-image';
+    }
 
-    // Render the inline image and get a DOMElement for it
-    $nodes = Html::load($this->renderInlineImage($uuid, $attributes))
-      ->getElementsByTagName('body')
+    $image_html = $this->renderInlineImage($uuid, $attributes);
+    // Load the altered HTML into a new DOMDocument and retrieve the element.
+    $updated_nodes = HTML::load($image_html)->getElementsByTagName('body')
       ->item(0)
       ->childNodes;
-    foreach($nodes as $node) {
+
+    $div = $dom->createElement('div');
+
+    foreach($updated_nodes as $updated_node) {
       // Ignore empty text nodes around the element (if any)
-      if ($node->nodeName !== '#text' && $node->nodeName !== '#comment') {
-        break;
+      if ($updated_node->nodeName !== '#text' && $updated_node->nodeName !== '#comment') {
+        $updated_node = $dom->importNode($updated_node, TRUE);
+        $div->appendChild($updated_node);
       }
     };
 
-    // Import the element into the DOM that we are working in and get it wrapped into a DIV node
-    $div = $dom->createElement('div');
-    if (isset($node)) {
-      $node = $dom->importNode($node, TRUE);
-      $div->appendChild($node);
-    }
-
     // Set the "align" CSS class on the wrapping node to get it styled properly
-    $div->setAttribute('class', trim($div->getAttribute('class') . ' field-type-image inline-image ' . $align_class));
-
+    $div->setAttribute('class', trim($div->getAttribute('class') . ' field-type-image inline-image'));
     return $div;
   }
 
