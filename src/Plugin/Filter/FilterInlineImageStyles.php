@@ -123,7 +123,7 @@ class FilterInlineImageStyles extends FilterBase {
       if (static::LINK_TO_NOTHING !== $inline_image_link) {
         $image_uri = $file->getFileUri();
         if (static::LINK_TO_ORIGINAL_IMAGE !== $inline_image_link) {
-          $image_style = entity_load('image_style', $inline_image_link);
+          $image_style = \Drupal::entityTypeManager()->getStorage('image_style')->load($inline_image_link);
           $path = $image_style ? $image_style->buildUrl($image_uri) : '';
         } else {
           $path = file_create_url($image_uri);
@@ -134,7 +134,7 @@ class FilterInlineImageStyles extends FilterBase {
       // Get information on the image style that should be applied on the inline image
       $cache_tags = array();
       if (static::INLINE_IMAGE_STYLE_ORIGINAL !== $image_style_id) {
-        $image_style = entity_load('image_style', $image_style_id);
+        $image_style = \Drupal::entityTypeManager()->getStorage('image_style')->load($image_style_id);
         $cache_tags = $image_style->getCacheTags();
       }
 
