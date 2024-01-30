@@ -126,7 +126,7 @@ class FilterInlineImageStyles extends FilterBase {
           $image_style = \Drupal::entityTypeManager()->getStorage('image_style')->load($inline_image_link);
           $path = $image_style ? $image_style->buildUrl($image_uri) : '';
         } else {
-          $path = file_create_url($image_uri);
+          $path = \Drupal::service('file_url_generator')->generateAbsoluteString($image_uri);
         }
         $uri = Url::fromUri($path);
       }
