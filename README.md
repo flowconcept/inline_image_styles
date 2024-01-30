@@ -1,4 +1,4 @@
-# Inline Image Styles module for drupal 8
+# Inline Image Styles module for drupal 9 and 10
 
 Applies image styles to inline image using an input format filter.
 
