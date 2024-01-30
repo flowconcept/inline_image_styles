@@ -3,7 +3,6 @@ description: Allows you to apply image styles to inline images.
 package: Custom
 type: module
 version: '2.0'
-core: 8.x
 core_version_requirement: ^9 || ^10
 dependencies:
   - image
